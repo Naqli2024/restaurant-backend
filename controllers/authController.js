@@ -31,10 +31,7 @@ export const login = async (req, res) => {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(
-      password,
-      user.password
-    );
+    const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -79,7 +76,7 @@ export const login = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: process.env.JWT_EXPIRES_IN || "1d",
-      }
+      },
     );
 
     // Update last login
@@ -87,11 +84,19 @@ export const login = async (req, res) => {
     await user.save();
 
     // Store JWT in HTTP-only cookie
+    // res.cookie("restaurantToken", token, {
+    //   httpOnly: true,
+    //   secure: process.env.NODE_ENV === "production",
+    //   sameSite:
+    //     process.env.NODE_ENV === "production" ? "none" : "lax",
+    //   maxAge: 24 * 60 * 60 * 1000,
+    //   path: "/",
+    // });
+
     res.cookie("restaurantToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite:
-        process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
       maxAge: 24 * 60 * 60 * 1000,
       path: "/",
     });
@@ -128,9 +133,8 @@ export const logout = (req, res) => {
     res.clearCookie("restaurantToken", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite:
-        process.env.NODE_ENV === "production" ? "none" : "lax",
-        path: "/",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      path: "/",
     });
 
     return res.status(200).json({
@@ -169,9 +173,7 @@ export const getLoggedInUser = async (req, res) => {
     const restaurant = await Restaurant.findOne({
       _id: req.user.restaurantId,
       isActive: true,
-    }).select(
-      "restaurantName ownerName email mobile address gstNo logo"
-    );
+    }).select("restaurantName ownerName email mobile address gstNo logo");
 
     if (!restaurant) {
       return res.status(404).json({

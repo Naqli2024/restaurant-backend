@@ -140,34 +140,18 @@ export const createDineInOrder = async (req, res) => {
   const session = await mongoose.startSession();
 
   try {
-    // 1. Only ADMIN and CAPTAIN can create Dine-In orders
-    if (!canCreateOrder(req)) {
+    // 1. Only CAPTAIN can create Dine-In orders
+    if (req.user.roleCode !== "CAPTAIN") {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to create orders.",
+        message: "Only Captain can create Dine-In orders.",
       });
     }
 
     const restaurantId = req.user.restaurantId;
-    const loggedInUserId = req.user.userId;
-    const roleCode = req.user.roleCode;
 
-    // ADMIN must select a Captain.
-    // CAPTAIN automatically becomes the assigned Captain.
-    let captainId = null;
-
-    if (roleCode === "CAPTAIN") {
-      captainId = loggedInUserId;
-    } else if (roleCode === "ADMIN") {
-      captainId = req.body.captainId;
-
-      if (!captainId || !mongoose.isValidObjectId(captainId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Please select a valid Captain for this order.",
-        });
-      }
-    }
+    // Automatically assign the logged-in Captain
+    const captainId = req.user.userId;
 
     const { floorId, tableId, customerName, numberOfGuests, items } = req.body;
 

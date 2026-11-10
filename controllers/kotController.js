@@ -4,6 +4,8 @@ import KOT from "../models/KOT.js";
 import User from "../models/User.js";
 import Employee from "../models/Employee.js";
 import KitchenStation from "../models/KitchenStation.js";
+import Floor from "../models/Floor.js";
+import Table from "../models/Table.js";
 
 // Common error response.
 const handleError = (res, error, operation) => {
@@ -316,6 +318,17 @@ export const updateKOTItemStatus = async (req, res) => {
       throw createError("Only Ready food items can be marked as Served.");
     }
 
+    // Kitchen must start an item before marking it Ready.
+    if (
+      !access.isCaptain &&
+      status === "Ready" &&
+      !["Preparing", "Ready"].includes(item.itemStatus)
+    ) {
+      throw createError(
+        "An item must be Preparing before it can be marked Ready.",
+      );
+    }
+
     item.itemStatus = status;
 
     const activeItems = kot.items.filter(
@@ -346,6 +359,16 @@ export const updateKOTItemStatus = async (req, res) => {
       kot.kotStatus = "New";
     }
 
+    // Set readyAt when all active items become Ready or Served.
+    if (kot.kotStatus === "Ready" && !kot.readyAt) {
+      kot.readyAt = new Date();
+    }
+
+    // Clear readyAt if the KOT is no longer Ready.
+    if (kot.kotStatus !== "Ready") {
+      kot.readyAt = null;
+    }
+
     if (["Preparing", "Ready"].includes(status) && !kot.startedAt) {
       kot.startedAt = new Date();
     }
@@ -365,5 +388,205 @@ export const updateKOTItemStatus = async (req, res) => {
     });
   } catch (error) {
     return handleError(res, error, "Update KOT item status");
+  }
+};
+
+// GET /api/kots/kitchen-display
+export const getKitchenDisplay = async (req, res) => {
+  try {
+    const access = await getKOTAccess(req);
+
+    // Kitchen Display is only for ADMIN and KITCHEN.
+    if (access.isCaptain) {
+      throw createError(
+        "Captains are not authorized to access Kitchen Display.",
+        403,
+      );
+    }
+
+    const { restaurantId, isAdmin, kitchenStationId } = access;
+
+    // 1. Get active kitchen stations.
+    const stationFilter = {
+      restaurantId,
+      isActive: true,
+    };
+
+    // Kitchen employees can only access their assigned station.
+    if (!isAdmin) {
+      stationFilter._id = kitchenStationId;
+    }
+
+    const stations = await KitchenStation.find(stationFilter)
+      .select("_id name code displayOrder")
+      .sort({ displayOrder: 1, name: 1 })
+      .lean();
+
+    const stationIds = stations.map((station) => station._id);
+
+    // 2. Get all active KOTs for accessible stations.
+    const kotFilter = {
+      restaurantId,
+      kitchenStationId: { $in: stationIds },
+      kotStatus: { $in: ["New", "Preparing", "Ready"] },
+    };
+
+    const allKots = await KOT.find(kotFilter).sort({ createdAt: 1 }).lean();
+
+    // 3. Optional station filter for ADMIN.
+    let displayKots = allKots;
+
+    if (isAdmin && req.query.stationId) {
+      if (!mongoose.isValidObjectId(req.query.stationId)) {
+        throw createError("Invalid kitchen station ID.");
+      }
+
+      const selectedStation = stations.find(
+        (station) => station._id.toString() === req.query.stationId,
+      );
+
+      if (!selectedStation) {
+        throw createError("Kitchen station not found.", 404);
+      }
+
+      displayKots = allKots.filter(
+        (kot) =>
+          kot.kitchenStationId.toString() === selectedStation._id.toString(),
+      );
+    }
+
+    // 4. Collect IDs needed to display additional information.
+    const captainIds = [
+      ...new Set(allKots.map((kot) => kot.captainId.toString())),
+    ];
+
+    const tableIds = [
+      ...new Set(
+        allKots
+          .filter((kot) => kot.tableId)
+          .map((kot) => kot.tableId.toString()),
+      ),
+    ];
+
+    const floorIds = [
+      ...new Set(
+        allKots
+          .filter((kot) => kot.floorId)
+          .map((kot) => kot.floorId.toString()),
+      ),
+    ];
+
+    // 5. Retrieve Captain accounts.
+    const captainUsers = await User.find({
+      _id: { $in: captainIds },
+      restaurantId,
+    })
+      .select("_id username employeeId")
+      .lean();
+
+    const employeeIds = captainUsers
+      .filter((user) => user.employeeId)
+      .map((user) => user.employeeId);
+
+    const employees = await Employee.find({
+      _id: { $in: employeeIds },
+      restaurantId,
+    })
+      .select("_id employeeName")
+      .lean();
+
+    const employeeMap = new Map(
+      employees.map((employee) => [
+        employee._id.toString(),
+        employee.employeeName,
+      ]),
+    );
+
+    const captainMap = new Map(
+      captainUsers.map((user) => [
+        user._id.toString(),
+        user.employeeId
+          ? employeeMap.get(user.employeeId.toString()) || user.username
+          : user.username,
+      ]),
+    );
+
+    // 6. Retrieve table and floor information.
+    const tables = await Table.find({
+      _id: { $in: tableIds },
+      restaurantId,
+    })
+      .select("_id tableName")
+      .lean();
+
+    const floors = await Floor.find({
+      _id: { $in: floorIds },
+      restaurantId,
+    })
+      .select("_id floorName")
+      .lean();
+
+    const tableMap = new Map(
+      tables.map((table) => [table._id.toString(), table.tableName]),
+    );
+
+    const floorMap = new Map(
+      floors.map((floor) => [floor._id.toString(), floor.floorName]),
+    );
+
+    // 7. Add display information to each KOT.
+    const formattedKots = displayKots.map((kot) => ({
+      ...kot,
+
+      captainName: captainMap.get(kot.captainId.toString()) || "Unknown",
+
+      tableName: kot.tableId
+        ? tableMap.get(kot.tableId.toString()) || "Unknown"
+        : null,
+
+      floorName: kot.floorId
+        ? floorMap.get(kot.floorId.toString()) || "Unknown"
+        : null,
+    }));
+
+    // 8. Group KOTs into the three Kitchen Display columns.
+    const newKots = formattedKots.filter((kot) => kot.kotStatus === "New");
+
+    const preparingKots = formattedKots.filter(
+      (kot) => kot.kotStatus === "Preparing",
+    );
+
+    const readyKots = formattedKots.filter((kot) => kot.kotStatus === "Ready");
+
+    // 9. Calculate station-wise active KOT counts.
+    const stationsWithCounts = stations.map((station) => ({
+      ...station,
+
+      count: allKots.filter(
+        (kot) => kot.kitchenStationId.toString() === station._id.toString(),
+      ).length,
+    }));
+
+    // 10. Return Kitchen Display data.
+    return res.status(200).json({
+      success: true,
+
+      summary: {
+        new: newKots.length,
+        preparing: preparingKots.length,
+        ready: readyKots.length,
+        total: formattedKots.length,
+      },
+
+      stations: stationsWithCounts,
+
+      columns: {
+        new: newKots,
+        preparing: preparingKots,
+        ready: readyKots,
+      },
+    });
+  } catch (error) {
+    return handleError(res, error, "Get Kitchen Display");
   }
 };
