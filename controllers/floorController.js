@@ -5,14 +5,13 @@ import Table from "../models/Table.js";
 // POST /api/floors
 // Create a floor and its tables.
 export const createFloor = async (req, res) => {
-  const { floorName, floorCode, description, displayOrder, tables } =
-    req.body;
+  const { floorName, floorCode, description, displayOrder, tables } = req.body;
 
   // Only the restaurant administrator can configure floors.
-  if (req.user?.roleCode !== "ADMIN") {
+  if (!["ADMIN", "BACKOFFICE"].includes(req.user?.roleCode)) {
     return res.status(403).json({
       success: false,
-      message: "Only the restaurant administrator can create floors.",
+      message: "Only ADMIN or BACKOFFICE users can create floors.",
     });
   }
 
@@ -44,20 +43,14 @@ export const createFloor = async (req, res) => {
   const normalizedTableNames = [];
 
   for (const table of tables) {
-    if (
-      typeof table.tableName !== "string" ||
-      !table.tableName.trim()
-    ) {
+    if (typeof table.tableName !== "string" || !table.tableName.trim()) {
       return res.status(400).json({
         success: false,
         message: "Every table must have a table name.",
       });
     }
 
-    if (
-      !Number.isInteger(table.seatingCapacity) ||
-      table.seatingCapacity < 1
-    ) {
+    if (!Number.isInteger(table.seatingCapacity) || table.seatingCapacity < 1) {
       return res.status(400).json({
         success: false,
         message: `Invalid seating capacity for table ${table.tableName}.`,
@@ -78,10 +71,7 @@ export const createFloor = async (req, res) => {
   // Validate optional ordering values.
   const finalDisplayOrder = displayOrder ?? 0;
 
-  if (
-    !Number.isInteger(finalDisplayOrder) ||
-    finalDisplayOrder < 0
-  ) {
+  if (!Number.isInteger(finalDisplayOrder) || finalDisplayOrder < 0) {
     return res.status(400).json({
       success: false,
       message: "Display order must be a non-negative whole number.",
@@ -104,9 +94,7 @@ export const createFloor = async (req, res) => {
       }).session(session);
 
       if (existingFloor) {
-        const error = new Error(
-          "A floor with this name already exists."
-        );
+        const error = new Error("A floor with this name already exists.");
         error.statusCode = 409;
         throw error;
       }
@@ -122,7 +110,7 @@ export const createFloor = async (req, res) => {
             displayOrder: finalDisplayOrder,
           },
         ],
-        { session }
+        { session },
       );
 
       // Create all tables linked to this floor.
@@ -134,10 +122,7 @@ export const createFloor = async (req, res) => {
         displayOrder: table.displayOrder ?? index,
       }));
 
-      const createdTables = await Table.insertMany(
-        tableDocuments,
-        { session }
-      );
+      const createdTables = await Table.insertMany(tableDocuments, { session });
 
       result = {
         floor,
@@ -163,10 +148,9 @@ export const createFloor = async (req, res) => {
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.statusCode
-          ? error.message
-          : "Failed to create floor and tables.",
+      message: error.statusCode
+        ? error.message
+        : "Failed to create floor and tables.",
     });
   } finally {
     await session.endSession();
@@ -244,11 +228,10 @@ export const addTable = async (req, res) => {
     const { tableName, seatingCapacity, displayOrder } = req.body;
     const restaurantId = req.user.restaurantId;
 
-    // Only the restaurant administrator can add tables.
-    if (req.user.roleCode !== "ADMIN") {
+    if (!["ADMIN", "BACKOFFICE"].includes(req.user?.roleCode)) {
       return res.status(403).json({
         success: false,
-        message: "Only the restaurant administrator can add tables.",
+        message: "Only ADMIN or BACKOFFICE users can add tables.",
       });
     }
 
@@ -279,10 +262,7 @@ export const addTable = async (req, res) => {
     // Validate optional display order.
     const finalDisplayOrder = displayOrder ?? 0;
 
-    if (
-      !Number.isInteger(finalDisplayOrder) ||
-      finalDisplayOrder < 0
-    ) {
+    if (!Number.isInteger(finalDisplayOrder) || finalDisplayOrder < 0) {
       return res.status(400).json({
         success: false,
         message: "Display order must be a non-negative whole number.",
@@ -708,7 +688,7 @@ export const updateFloorStatus = async (req, res) => {
           {
             $set: { isActive: false },
           },
-          { session }
+          { session },
         );
       }
 
