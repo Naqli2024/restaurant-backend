@@ -15,6 +15,7 @@ import foodMenuRoutes from "./routes/foodMenuRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import kitchenStationRoutes from "./routes/kitchenStationRoutes.js";
 import kotRoutes from "./routes/kotRoutes.js";
+import billRoutes from "./routes/billRoutes.js";
 
 // Load environment variables
 dotenv.config();
@@ -62,6 +63,7 @@ app.use("/api/food-menu", foodMenuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/kitchen-stations", kitchenStationRoutes);
 app.use("/api/kots", kotRoutes);
+app.use("/api/bills", billRoutes);
 
 // Start server after connecting to MongoDB
 const startServer = async () => {

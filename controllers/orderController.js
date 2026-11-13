@@ -580,3 +580,225 @@ export const createDineInOrder = async (req, res) => {
     await session.endSession();
   }
 };
+
+
+// =====================================================
+// 3. GET COMPLETE ORDER DETAILS BY ORDER ID
+// =====================================================
+
+export const getOrderById = async (req, res) => {
+  try {
+    const restaurantId = req.user.restaurantId;
+    const { orderId } = req.params;
+
+    // 1. Validate Order ID
+    if (!orderId || !mongoose.isValidObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID.",
+      });
+    }
+
+    // 2. Find order belonging to the logged-in restaurant
+    const order = await Order.findOne({
+      _id: orderId,
+      restaurantId,
+    })
+      .populate({
+        path: "floorId",
+        select: "floorName floorCode",
+      })
+      .populate({
+        path: "tableId",
+        select: "tableName seatingCapacity",
+      })
+      .populate({
+        path: "captainId",
+        select: "username employeeId",
+        populate: {
+          path: "employeeId",
+          select: "employeeName employeeCode",
+        },
+      })
+      .lean();
+
+    // 3. Check whether order exists
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found.",
+      });
+    }
+
+    // 4. Return complete order details
+    return res.status(200).json({
+      success: true,
+      message: "Order details fetched successfully.",
+      data: order,
+    });
+  } catch (error) {
+    console.error("Get Order By ID Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch order details.",
+    });
+  }
+};
+
+
+// =====================================================
+// 4. CAPTAIN REQUESTS BILL FOR AN ORDER
+// =====================================================
+
+export const requestBill = async (req, res) => {
+  try {
+    // 1. Only Captain can request a bill
+    if (req.user.roleCode !== "CAPTAIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only Captain can request a bill.",
+      });
+    }
+
+    const restaurantId = req.user.restaurantId;
+    const captainId = req.user.userId;
+    const { orderId } = req.params;
+
+    // 2. Validate Order ID
+    if (!mongoose.isValidObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID.",
+      });
+    }
+
+    // 3. Find this Captain's Order in this restaurant
+    const order = await Order.findOne({
+      _id: orderId,
+      restaurantId,
+      captainId,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found or you are not assigned to this order.",
+      });
+    }
+
+    // 4. Check Order status
+    if (order.orderStatus !== "Active") {
+      return res.status(400).json({
+        success: false,
+        message: "Bill cannot be requested for an inactive order.",
+      });
+    }
+
+    if (order.seatingStatus !== "Seated") {
+      return res.status(400).json({
+        success: false,
+        message: "Bill cannot be requested because this customer group has already left.",
+      });
+    }
+
+    // 5. Prevent duplicate bill requests
+    if (
+      order.paymentStatus === "Bill Requested" ||
+      order.paymentStatus === "Payment Pending"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Bill has already been requested or generated.",
+      });
+    }
+
+    if (order.paymentStatus === "Paid") {
+      return res.status(400).json({
+        success: false,
+        message: "This order has already been paid.",
+      });
+    }
+
+    // 6. Update Order payment status
+    order.paymentStatus = "Bill Requested";
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Bill requested successfully. Please inform the cashier.",
+      data: {
+        orderId: order._id,
+        customerName: order.customerName,
+        orderType: order.orderType,
+        tableId: order.tableId,
+        totalAmount: order.totalAmount,
+        paymentStatus: order.paymentStatus,
+      },
+    });
+  } catch (error) {
+    console.error("Request Bill Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to request bill.",
+    });
+  }
+};
+
+
+export const getBillRequests = async (req, res) => {
+  try {
+    const restaurantId = req.user.restaurantId;
+    const roleCode = req.user.roleCode;
+
+    // Only ADMIN and CASHIER can view bill requests
+    if (!["ADMIN", "CASHIER"].includes(roleCode)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to view bill requests.",
+      });
+    }
+
+    // Retrieve orders where Captain has requested a bill
+    const billRequests = await Order.find({
+      restaurantId,
+      paymentStatus: "Bill Requested",
+      orderStatus: "Active",
+    })
+      .populate({
+        path: "floorId",
+        select: "floorName floorCode",
+      })
+      .populate({
+        path: "tableId",
+        select: "tableName seatingCapacity",
+      })
+      .populate({
+        path: "captainId",
+        select: "username employeeId",
+        populate: {
+          path: "employeeId",
+          select: "employeeName employeeCode",
+        },
+      })
+      .sort({ createdAt: 1 }) // Oldest requests first
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      message: "Bill requests fetched successfully.",
+      count: billRequests.length,
+      data: billRequests,
+    });
+  } catch (error) {
+    console.error("Get Bill Requests Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch bill requests.",
+      error: error.message,
+    });
+  }
+};
