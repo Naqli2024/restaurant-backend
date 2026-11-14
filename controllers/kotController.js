@@ -6,6 +6,7 @@ import Employee from "../models/Employee.js";
 import KitchenStation from "../models/KitchenStation.js";
 import Floor from "../models/Floor.js";
 import Table from "../models/Table.js";
+import Order from "../models/Order.js";
 
 // Common error response.
 const handleError = (res, error, operation) => {
@@ -23,6 +24,40 @@ const createError = (message, statusCode = 400) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+};
+
+// Synchronize Takeaway/Delivery order status using all its KOTs.
+const syncOrderFulfilmentStatus = async (orderId, restaurantId) => {
+  const order = await Order.findOne({
+    _id: orderId,
+    restaurantId,
+    orderType: { $in: ["Takeaway", "Delivery"] },
+    orderStatus: "Active",
+  });
+
+  if (!order) return;
+
+  const kots = await KOT.find({
+    orderId,
+    restaurantId,
+  }).select("kotStatus");
+
+  if (!kots.length) return;
+
+  let nextStatus = "Pending";
+
+  if (kots.every((kot) => kot.kotStatus === "Ready")) {
+    nextStatus = "Ready";
+  } else if (
+    kots.some((kot) => ["Preparing", "Ready"].includes(kot.kotStatus))
+  ) {
+    nextStatus = "Preparing";
+  }
+
+  if (order.fulfilmentStatus !== nextStatus) {
+    order.fulfilmentStatus = nextStatus;
+    await order.save();
+  }
 };
 
 // Only ADMIN and KITCHEN roles can access KOT APIs.
@@ -249,6 +284,8 @@ export const startKOT = async (req, res) => {
 
     await kot.save();
 
+    await syncOrderFulfilmentStatus(kot.orderId, access.restaurantId);
+
     return res.status(200).json({
       success: true,
       message: "KOT preparation started.",
@@ -379,6 +416,8 @@ export const updateKOTItemStatus = async (req, res) => {
 
     await kot.save();
 
+    await syncOrderFulfilmentStatus(kot.orderId, access.restaurantId);
+
     return res.status(200).json({
       success: true,
       message: access.isCaptain
@@ -457,7 +496,11 @@ export const getKitchenDisplay = async (req, res) => {
 
     // 4. Collect IDs needed to display additional information.
     const captainIds = [
-      ...new Set(allKots.map((kot) => kot.captainId.toString())),
+      ...new Set(
+        allKots
+          .filter((kot) => kot.captainId)
+          .map((kot) => kot.captainId.toString()),
+      ),
     ];
 
     const tableIds = [
@@ -538,7 +581,9 @@ export const getKitchenDisplay = async (req, res) => {
     const formattedKots = displayKots.map((kot) => ({
       ...kot,
 
-      captainName: captainMap.get(kot.captainId.toString()) || "Unknown",
+      captainName: kot.captainId
+        ? captainMap.get(kot.captainId.toString()) || "Unknown"
+        : null,
 
       tableName: kot.tableId
         ? tableMap.get(kot.tableId.toString()) || "Unknown"

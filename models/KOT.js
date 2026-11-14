@@ -100,7 +100,7 @@ const kotSchema = new mongoose.Schema(
     captainId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: null,
     },
 
     items: {

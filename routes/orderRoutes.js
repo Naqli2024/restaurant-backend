@@ -6,6 +6,9 @@ import {
   getOrderById,
   requestBill,
   getBillRequests,
+  checkoutOrder,
+  createTakeawayDeliveryOrder,
+  updateFulfilmentStatus,
 } from "../controllers/orderController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -17,14 +20,17 @@ router.use(authMiddleware);
 
 // Get active floors and their tables
 router.get("/dine-in/floors", getDineInFloors);
-
 // Create a Dine-In order
 router.post("/dine-in", createDineInOrder);
+router.post("/takeaway-delivery", createTakeawayDeliveryOrder);
 
-// Captain requests bill for a specific order
-router.patch("/:orderId/request-bill", requestBill);
+router.patch("/:orderId/fulfilment-status", updateFulfilmentStatus);
 
 router.get("/bill-requests", getBillRequests);
+// Captain requests bill for a specific order
+router.patch("/:orderId/request-bill", requestBill);
+router.patch("/:orderId/checkout", checkoutOrder);
+
 
 // Get complete order details by Order ID
 router.get("/:orderId", getOrderById);

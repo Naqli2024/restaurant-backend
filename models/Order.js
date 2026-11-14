@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema(
@@ -16,6 +17,7 @@ const orderSchema = new mongoose.Schema(
       default: "Dine-In",
     },
 
+    // Dine-In details
     floorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Floor",
@@ -34,28 +36,76 @@ const orderSchema = new mongoose.Schema(
       },
     },
 
+    numberOfGuests: {
+      type: Number,
+      default: null,
+      required: function () {
+        return this.orderType === "Dine-In";
+      },
+      min: 1,
+      validate: {
+        validator: function (value) {
+          return value == null || Number.isInteger(value);
+        },
+        message: "Number of guests must be a whole number",
+      },
+    },
+
+    // Customer details
     customerName: {
       type: String,
       required: true,
       trim: true,
     },
 
-    numberOfGuests: {
-      type: Number,
-      required: true,
-      min: 1,
-      validate: {
-        validator: Number.isInteger,
-        message: "Number of guests must be a whole number",
+    customerMobile: {
+      type: String,
+      trim: true,
+      required: function () {
+        return ["Takeaway", "Delivery"].includes(this.orderType);
       },
     },
 
+    // Delivery details
+    deliveryAddress: {
+      type: String,
+      default: "",
+      trim: true,
+      required: function () {
+        return this.orderType === "Delivery";
+      },
+    },
+
+    deliveryChannel: {
+      type: String,
+      trim: true,
+      default: "Direct",
+    },
+
+    deliveryCharges: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Assigned Captain (required only for Dine-In)
     captainId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+      required: function () {
+        return this.orderType === "Dine-In";
+      },
     },
 
+    // User who actually created the order
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    // Food items
     items: [
       {
         foodMenuId: {
@@ -80,21 +130,18 @@ const orderSchema = new mongoose.Schema(
           },
         },
 
-        // One item's selling price before GST
         unitPrice: {
           type: Number,
           required: true,
           min: 0,
         },
 
-        // Quantity multiplied by unit price
         itemSubTotal: {
           type: Number,
           required: true,
           min: 0,
         },
 
-        // GST percentage copied from FoodMenu
         gstRate: {
           type: Number,
           required: true,
@@ -102,14 +149,12 @@ const orderSchema = new mongoose.Schema(
           max: 100,
         },
 
-        // GST amount for this item
         gstAmount: {
           type: Number,
           required: true,
           min: 0,
         },
 
-        // Item subtotal + GST
         totalPrice: {
           type: Number,
           required: true,
@@ -124,25 +169,42 @@ const orderSchema = new mongoose.Schema(
       },
     ],
 
-    // Total of all items before GST
+    // Order totals
     subTotal: {
       type: Number,
       required: true,
       min: 0,
     },
 
-    // Total GST for the order
     totalGst: {
       type: Number,
       required: true,
       min: 0,
     },
 
-    // Subtotal + total GST
     totalAmount: {
       type: Number,
       required: true,
       min: 0,
+    },
+
+    // Delivery and Takeaway fulfilment tracking
+    fulfilmentStatus: {
+      type: String,
+      enum: [
+        "Not Applicable",
+        "Pending",
+        "Preparing",
+        "Ready",
+        "Dispatched",
+        "Handed Over",
+        "Delivered",
+      ],
+      default: function () {
+        return this.orderType === "Dine-In"
+          ? "Not Applicable"
+          : "Pending";
+      },
     },
 
     orderStatus: {
@@ -153,14 +215,24 @@ const orderSchema = new mongoose.Schema(
 
     seatingStatus: {
       type: String,
-      enum: ["Seated", "Left"],
-      default: "Seated",
+      enum: ["Not Applicable", "Seated", "Left"],
+      default: function () {
+        return this.orderType === "Dine-In"
+          ? "Seated"
+          : "Not Applicable";
+      },
     },
 
     paymentStatus: {
       type: String,
-      enum: ["Not Requested", "Bill Requested", "Payment Pending", "Paid"],
-      default: "Not Requested",
+      enum: [
+        "Unpaid",
+        "Not Requested",
+        "Bill Requested",
+        "Payment Pending",
+        "Paid",
+      ],
+      default: "Unpaid",
     },
 
     orderedAt: {
@@ -173,7 +245,7 @@ const orderSchema = new mongoose.Schema(
   },
 );
 
-// Useful indexes for restaurant-wise order listing
+// Restaurant-wise order listing
 orderSchema.index({
   restaurantId: 1,
   orderStatus: 1,
@@ -186,6 +258,7 @@ orderSchema.index({
   orderStatus: 1,
 });
 
+// Existing index retained for now
 orderSchema.index({
   restaurantId: 1,
   kotStatus: 1,

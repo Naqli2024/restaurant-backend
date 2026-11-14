@@ -572,9 +572,7 @@ export const createDineInOrder = async (req, res) => {
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.statusCode
-        ? error.message
-        : "Failed to create Dine-In order.",
+      message: error.message
     });
   } finally {
     await session.endSession();
@@ -799,6 +797,655 @@ export const getBillRequests = async (req, res) => {
       success: false,
       message: "Failed to fetch bill requests.",
       error: error.message,
+    });
+  }
+};
+
+
+// Customer Checkout / Release Table Seats
+export const checkoutOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const restaurantId = req.user.restaurantId;
+    const captainId = req.user.userId;
+    const roleCode = req.user.roleCode;
+    const { orderId } = req.params;
+
+    // Only Captain can checkout their own customer orders
+    if (roleCode !== "CAPTAIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only the assigned Captain can checkout this order.",
+      });
+    }
+
+    if (!mongoose.isValidObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID.",
+      });
+    }
+
+    let checkoutResult;
+
+    await session.withTransaction(async () => {
+      // Find order assigned to the logged-in Captain
+      const order = await Order.findOne({
+        _id: orderId,
+        restaurantId,
+        captainId,
+      }).session(session);
+
+      if (!order) {
+        throw new Error("Order not found or not assigned to you.");
+      }
+
+      // Order must be fully paid
+      if (order.paymentStatus !== "Paid") {
+        throw new Error(
+          "Customer must complete full payment before checkout."
+        );
+      }
+
+      // Prevent duplicate checkout
+      if (order.seatingStatus === "Left") {
+        throw new Error("This customer group has already checked out.");
+      }
+
+      if (order.seatingStatus !== "Seated") {
+        throw new Error("This order is not currently seated.");
+      }
+
+      if (order.orderStatus !== "Active") {
+        throw new Error("Only active orders can be checked out.");
+      }
+
+      // Find the table belonging to this restaurant
+      const table = await Table.findOne({
+        _id: order.tableId,
+        restaurantId,
+      }).session(session);
+
+      if (!table) {
+        throw new Error("Table not found.");
+      }
+
+      // Verify this order is currently registered on the table
+      const orderExistsOnTable = table.currentOrderIds.some(
+        (id) => String(id) === String(order._id)
+      );
+
+      if (!orderExistsOnTable) {
+        throw new Error(
+          "This order is not registered in the table's current orders."
+        );
+      }
+
+      // Prevent occupied seats from becoming negative
+      if (table.occupiedSeats < order.numberOfGuests) {
+        throw new Error(
+          "Table occupancy data is inconsistent. Please check the occupied seats."
+        );
+      }
+
+      // Release only this customer's seats
+      table.occupiedSeats -= order.numberOfGuests;
+
+      // Remove only this order from the table
+      table.currentOrderIds = table.currentOrderIds.filter(
+        (id) => String(id) !== String(order._id)
+      );
+
+      // Recalculate table occupancy
+      if (table.occupiedSeats === 0) {
+        table.occupancyStatus = "Available";
+      } else if (table.occupiedSeats < table.seatingCapacity) {
+        table.occupancyStatus = "Partially Occupied";
+      } else {
+        table.occupancyStatus = "Fully Occupied";
+      }
+
+      // Mark customer group as checked out
+      order.seatingStatus = "Left";
+      order.orderStatus = "Completed";
+
+      await table.save({ session });
+      await order.save({ session });
+
+      checkoutResult = {
+        orderId: order._id,
+        customerName: order.customerName,
+        numberOfGuests: order.numberOfGuests,
+        paymentStatus: order.paymentStatus,
+        seatingStatus: order.seatingStatus,
+        orderStatus: order.orderStatus,
+        table: {
+          tableId: table._id,
+          tableName: table.tableName,
+          seatingCapacity: table.seatingCapacity,
+          occupiedSeats: table.occupiedSeats,
+          availableSeats:
+            table.seatingCapacity - table.occupiedSeats,
+          occupancyStatus: table.occupancyStatus,
+          currentOrderIds: table.currentOrderIds,
+        },
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Customer checkout completed and seats released successfully.",
+      data: checkoutResult,
+    });
+  } catch (error) {
+    console.error("Checkout Order Error:", error);
+
+    const clientErrors = [
+      "Order not found or not assigned to you.",
+      "Customer must complete full payment before checkout.",
+      "This customer group has already checked out.",
+      "This order is not currently seated.",
+      "Only active orders can be checked out.",
+      "Table not found.",
+      "This order is not registered in the table's current orders.",
+      "Table occupancy data is inconsistent. Please check the occupied seats.",
+    ];
+
+    return res
+      .status(clientErrors.includes(error.message) ? 400 : 500)
+      .json({
+        success: false,
+        message: error.message || "Failed to checkout customer.",
+      });
+  } finally {
+    await session.endSession();
+  }
+};
+
+
+// =====================================================
+// CREATE TAKEAWAY / DELIVERY ORDER
+// =====================================================
+
+export const createTakeawayDeliveryOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const restaurantId = req.user.restaurantId;
+    const createdBy = req.user.userId;
+    const roleCode = req.user.roleCode;
+
+    // 1. Only ADMIN, CAPTAIN and CASHIER can create these orders
+    if (!["ADMIN", "CAPTAIN", "CASHIER"].includes(roleCode)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to create this order.",
+      });
+    }
+
+    const {
+      orderType,
+      customerName,
+      customerMobile,
+      deliveryAddress,
+      deliveryChannel,
+      deliveryCharges,
+      items,
+    } = req.body;
+
+    // 2. Validate order type
+    if (!["Takeaway", "Delivery"].includes(orderType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Order type must be Takeaway or Delivery.",
+      });
+    }
+
+    // 3. Validate customer details
+    if (
+      typeof customerName !== "string" ||
+      !customerName.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer name is required.",
+      });
+    }
+
+    if (
+      typeof customerMobile !== "string" ||
+      !customerMobile.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer mobile number is required.",
+      });
+    }
+
+    if (
+      orderType === "Delivery" &&
+      (typeof deliveryAddress !== "string" || !deliveryAddress.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Delivery address is required for Delivery orders.",
+      });
+    }
+
+    // 4. Validate delivery charges
+    const charges = Number(deliveryCharges ?? 0);
+
+    if (!Number.isFinite(charges) || charges < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Delivery charges must be a valid non-negative amount.",
+      });
+    }
+
+    if (orderType === "Takeaway" && charges > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Delivery charges are not applicable to Takeaway orders.",
+      });
+    }
+
+    // 5. Validate items
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please add at least one food item.",
+      });
+    }
+
+    for (const item of items) {
+      if (!item.foodMenuId || !mongoose.isValidObjectId(item.foodMenuId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid food item selected.",
+        });
+      }
+
+      if (
+        !Number.isInteger(Number(item.quantity)) ||
+        Number(item.quantity) < 1
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Item quantity must be a whole number greater than zero.",
+        });
+      }
+
+      if (
+        item.specialInstructions !== undefined &&
+        typeof item.specialInstructions !== "string"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Special instructions must be text.",
+        });
+      }
+    }
+
+    // Prevent duplicate food item IDs
+    const foodMenuIds = items.map((item) => item.foodMenuId.toString());
+
+    if (new Set(foodMenuIds).size !== foodMenuIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Duplicate food items found. Please combine their quantities.",
+      });
+    }
+
+    let createdOrder;
+    let createdKots = [];
+
+    // 6. Create order and KOTs in one transaction
+    await session.withTransaction(async () => {
+      createdKots = [];
+
+      // A. Verify menu items are available for this order type
+      const foodMenus = await FoodMenu.find({
+        _id: { $in: foodMenuIds },
+        restaurantId,
+        isActive: true,
+        isAvailable: true,
+        availableFor: orderType,
+      }).session(session);
+
+      if (foodMenus.length !== items.length) {
+        const error = new Error(
+          `One or more selected food items are unavailable for ${orderType}.`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // B. Validate kitchen station assignments
+      const kitchenStationIds = [
+        ...new Set(
+          foodMenus.map((food) => food.kitchenStationId?.toString())
+        ),
+      ];
+
+      if (
+        kitchenStationIds.some(
+          (stationId) => !stationId || stationId === "undefined"
+        )
+      ) {
+        const error = new Error(
+          "One or more food items do not have an assigned kitchen station."
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const kitchenStations = await KitchenStation.find({
+        _id: { $in: kitchenStationIds },
+        restaurantId,
+        isActive: true,
+      }).session(session);
+
+      if (kitchenStations.length !== kitchenStationIds.length) {
+        const error = new Error(
+          "One or more assigned kitchen stations are invalid or inactive."
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const kitchenStationMap = new Map(
+        kitchenStations.map((station) => [
+          station._id.toString(),
+          station,
+        ])
+      );
+
+      // C. Calculate item prices and GST from database values
+      const foodMenuMap = new Map(
+        foodMenus.map((food) => [food._id.toString(), food])
+      );
+
+      let subTotal = 0;
+      let totalGst = 0;
+
+      const orderItems = items.map((item) => {
+        const food = foodMenuMap.get(item.foodMenuId.toString());
+
+        const quantity = Number(item.quantity);
+        const unitPrice = Number(food.price);
+        const gstRate = Number(food.gstRate ?? 5);
+
+        const itemSubTotal = roundMoney(unitPrice * quantity);
+        const gstAmount = roundMoney((itemSubTotal * gstRate) / 100);
+        const totalPrice = roundMoney(itemSubTotal + gstAmount);
+
+        subTotal += itemSubTotal;
+        totalGst += gstAmount;
+
+        return {
+          foodMenuId: food._id,
+          itemName: food.itemName,
+          quantity,
+          unitPrice,
+          itemSubTotal,
+          gstRate,
+          gstAmount,
+          totalPrice,
+          specialInstructions: item.specialInstructions?.trim() || "",
+        };
+      });
+
+      subTotal = roundMoney(subTotal);
+      totalGst = roundMoney(totalGst);
+
+      // Delivery charges are added after item GST
+      const totalAmount = roundMoney(
+        subTotal + totalGst + (orderType === "Delivery" ? charges : 0)
+      );
+
+      // D. Create the order
+      const order = new Order({
+        restaurantId,
+        orderType,
+        floorId: null,
+        tableId: null,
+        customerName: customerName.trim(),
+        customerMobile: customerMobile.trim(),
+        deliveryAddress:
+          orderType === "Delivery" ? deliveryAddress.trim() : "",
+        deliveryChannel: deliveryChannel?.trim() || "Direct",
+        deliveryCharges: orderType === "Delivery" ? charges : 0,
+        numberOfGuests: null,
+        captainId: null,
+        createdBy,
+        items: orderItems,
+        subTotal,
+        totalGst,
+        totalAmount,
+        fulfilmentStatus: "Pending",
+        orderStatus: "Active",
+        seatingStatus: "Not Applicable",
+        paymentStatus: "Unpaid",
+      });
+
+      await order.save({ session });
+
+      // E. Group order items by kitchen station
+      const itemsByStation = new Map();
+
+      for (const orderItem of orderItems) {
+        const food = foodMenuMap.get(orderItem.foodMenuId.toString());
+        const stationId = food.kitchenStationId.toString();
+
+        if (!itemsByStation.has(stationId)) {
+          itemsByStation.set(stationId, []);
+        }
+
+        itemsByStation.get(stationId).push({
+          foodMenuId: orderItem.foodMenuId,
+          itemName: orderItem.itemName,
+          quantity: orderItem.quantity,
+          specialInstructions: orderItem.specialInstructions,
+          itemStatus: "New",
+        });
+      }
+
+      // F. Create one KOT per kitchen station
+      const kotDocuments = [];
+
+      for (const [stationId, stationItems] of itemsByStation) {
+        const station = kitchenStationMap.get(stationId);
+
+        kotDocuments.push({
+          restaurantId,
+          kotNumber: `KOT-${station.code}-${order._id.toString().toUpperCase()}`,
+          orderId: order._id,
+          kitchenStationId: station._id,
+          kitchenStationName: station.name,
+          kitchenStationCode: station.code,
+          floorId: null,
+          tableId: null,
+          customerName: customerName.trim(),
+          numberOfGuests: 1,
+          captainId: null,
+          items: stationItems,
+          kotStatus: "New",
+        });
+      }
+
+      const savedKots = await KOT.insertMany(kotDocuments, { session });
+
+      createdKots = savedKots;
+      createdOrder = order;
+    });
+
+    // 7. Return created order and KOTs
+    return res.status(201).json({
+      success: true,
+      message: `${orderType} order and kitchen tickets created successfully.`,
+      data: {
+        order: createdOrder,
+        kots: createdKots,
+      },
+    });
+  } catch (error) {
+    console.error("Create Takeaway / Delivery Order Error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode
+        ? error.message
+        : "Failed to create Takeaway / Delivery order.",
+    });
+  } finally {
+    await session.endSession();
+  }
+};
+
+
+
+// =====================================================
+// UPDATE TAKEAWAY / DELIVERY FULFILMENT STATUS
+// =====================================================
+
+export const updateFulfilmentStatus = async (req, res) => {
+  try {
+    const restaurantId = req.user.restaurantId;
+    const roleCode = req.user.roleCode;
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    // 1. Only ADMIN and CASHIER can manage fulfilment
+    if (!["ADMIN", "CASHIER"].includes(roleCode)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Admin or Cashier can update fulfilment status.",
+      });
+    }
+
+    // 2. Validate order ID
+    if (!mongoose.isValidObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID.",
+      });
+    }
+
+    // 3. Validate requested status
+    const allowedStatuses = [
+      "Handed Over",
+      "Dispatched",
+      "Delivered",
+    ];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid fulfilment status.",
+      });
+    }
+
+    // 4. Find order belonging to this restaurant
+    const order = await Order.findOne({
+      _id: orderId,
+      restaurantId,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found.",
+      });
+    }
+
+    // 5. Only Takeaway and Delivery orders
+    if (!["Takeaway", "Delivery"].includes(order.orderType)) {
+      return res.status(400).json({
+        success: false,
+        message: "This endpoint is only for Takeaway and Delivery orders.",
+      });
+    }
+
+    // 6. Only active orders can be processed
+    if (order.orderStatus !== "Active") {
+      return res.status(400).json({
+        success: false,
+        message: "Only active orders can be processed.",
+      });
+    }
+
+    // 7. Validate the allowed status transition
+    const isValidTransition =
+      (order.orderType === "Takeaway" &&
+        order.fulfilmentStatus === "Ready" &&
+        status === "Handed Over") ||
+      (order.orderType === "Delivery" &&
+        order.fulfilmentStatus === "Ready" &&
+        status === "Dispatched") ||
+      (order.orderType === "Delivery" &&
+        order.fulfilmentStatus === "Dispatched" &&
+        status === "Delivered");
+
+    if (!isValidTransition) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot change fulfilment status from ${order.fulfilmentStatus} to ${status} for ${order.orderType}.`,
+      });
+    }
+
+    // 8. Before handover or dispatch, verify all station KOTs are Ready
+    if (
+      order.fulfilmentStatus === "Ready" &&
+      ["Handed Over", "Dispatched"].includes(status)
+    ) {
+      const kots = await KOT.find({
+        restaurantId,
+        orderId: order._id,
+      }).select("kotStatus").lean();
+
+      if (!kots.length) {
+        return res.status(400).json({
+          success: false,
+          message: "No kitchen tickets found for this order.",
+        });
+      }
+
+      const allKotsReady = kots.every(
+        (kot) => kot.kotStatus === "Ready"
+      );
+
+      if (!allKotsReady) {
+        return res.status(400).json({
+          success: false,
+          message: "All kitchen tickets must be Ready before handover or dispatch.",
+        });
+      }
+    }
+
+    // 9. Update fulfilment status
+    order.fulfilmentStatus = status;
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Order ${status.toLowerCase()} successfully.`,
+      data: {
+        orderId: order._id,
+        orderType: order.orderType,
+        customerName: order.customerName,
+        fulfilmentStatus: order.fulfilmentStatus,
+        orderStatus: order.orderStatus,
+        paymentStatus: order.paymentStatus,
+      },
+    });
+  } catch (error) {
+    console.error("Update Fulfilment Status Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update fulfilment status.",
     });
   }
 };
