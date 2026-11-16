@@ -573,13 +573,12 @@ export const createDineInOrder = async (req, res) => {
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   } finally {
     await session.endSession();
   }
 };
-
 
 // =====================================================
 // 3. GET COMPLETE ORDER DETAILS BY ORDER ID
@@ -645,7 +644,6 @@ export const getOrderById = async (req, res) => {
   }
 };
 
-
 // =====================================================
 // 4. CAPTAIN REQUESTS BILL FOR AN ORDER
 // =====================================================
@@ -697,7 +695,8 @@ export const requestBill = async (req, res) => {
     if (order.seatingStatus !== "Seated") {
       return res.status(400).json({
         success: false,
-        message: "Bill cannot be requested because this customer group has already left.",
+        message:
+          "Bill cannot be requested because this customer group has already left.",
       });
     }
 
@@ -745,7 +744,6 @@ export const requestBill = async (req, res) => {
     });
   }
 };
-
 
 export const getBillRequests = async (req, res) => {
   try {
@@ -802,7 +800,6 @@ export const getBillRequests = async (req, res) => {
   }
 };
 
-
 // Customer Checkout / Release Table Seats
 export const checkoutOrder = async (req, res) => {
   const session = await mongoose.startSession();
@@ -844,9 +841,7 @@ export const checkoutOrder = async (req, res) => {
 
       // Order must be fully paid
       if (order.paymentStatus !== "Paid") {
-        throw new Error(
-          "Customer must complete full payment before checkout."
-        );
+        throw new Error("Customer must complete full payment before checkout.");
       }
 
       // Prevent duplicate checkout
@@ -874,19 +869,19 @@ export const checkoutOrder = async (req, res) => {
 
       // Verify this order is currently registered on the table
       const orderExistsOnTable = table.currentOrderIds.some(
-        (id) => String(id) === String(order._id)
+        (id) => String(id) === String(order._id),
       );
 
       if (!orderExistsOnTable) {
         throw new Error(
-          "This order is not registered in the table's current orders."
+          "This order is not registered in the table's current orders.",
         );
       }
 
       // Prevent occupied seats from becoming negative
       if (table.occupiedSeats < order.numberOfGuests) {
         throw new Error(
-          "Table occupancy data is inconsistent. Please check the occupied seats."
+          "Table occupancy data is inconsistent. Please check the occupied seats.",
         );
       }
 
@@ -895,7 +890,7 @@ export const checkoutOrder = async (req, res) => {
 
       // Remove only this order from the table
       table.currentOrderIds = table.currentOrderIds.filter(
-        (id) => String(id) !== String(order._id)
+        (id) => String(id) !== String(order._id),
       );
 
       // Recalculate table occupancy
@@ -926,8 +921,7 @@ export const checkoutOrder = async (req, res) => {
           tableName: table.tableName,
           seatingCapacity: table.seatingCapacity,
           occupiedSeats: table.occupiedSeats,
-          availableSeats:
-            table.seatingCapacity - table.occupiedSeats,
+          availableSeats: table.seatingCapacity - table.occupiedSeats,
           occupancyStatus: table.occupancyStatus,
           currentOrderIds: table.currentOrderIds,
         },
@@ -953,17 +947,14 @@ export const checkoutOrder = async (req, res) => {
       "Table occupancy data is inconsistent. Please check the occupied seats.",
     ];
 
-    return res
-      .status(clientErrors.includes(error.message) ? 400 : 500)
-      .json({
-        success: false,
-        message: error.message || "Failed to checkout customer.",
-      });
+    return res.status(clientErrors.includes(error.message) ? 400 : 500).json({
+      success: false,
+      message: error.message || "Failed to checkout customer.",
+    });
   } finally {
     await session.endSession();
   }
 };
-
 
 // =====================================================
 // CREATE TAKEAWAY / DELIVERY ORDER
@@ -1004,20 +995,14 @@ export const createTakeawayDeliveryOrder = async (req, res) => {
     }
 
     // 3. Validate customer details
-    if (
-      typeof customerName !== "string" ||
-      !customerName.trim()
-    ) {
+    if (typeof customerName !== "string" || !customerName.trim()) {
       return res.status(400).json({
         success: false,
         message: "Customer name is required.",
       });
     }
 
-    if (
-      typeof customerMobile !== "string" ||
-      !customerMobile.trim()
-    ) {
+    if (typeof customerMobile !== "string" || !customerMobile.trim()) {
       return res.status(400).json({
         success: false,
         message: "Customer mobile number is required.",
@@ -1116,7 +1101,7 @@ export const createTakeawayDeliveryOrder = async (req, res) => {
 
       if (foodMenus.length !== items.length) {
         const error = new Error(
-          `One or more selected food items are unavailable for ${orderType}.`
+          `One or more selected food items are unavailable for ${orderType}.`,
         );
         error.statusCode = 400;
         throw error;
@@ -1124,18 +1109,16 @@ export const createTakeawayDeliveryOrder = async (req, res) => {
 
       // B. Validate kitchen station assignments
       const kitchenStationIds = [
-        ...new Set(
-          foodMenus.map((food) => food.kitchenStationId?.toString())
-        ),
+        ...new Set(foodMenus.map((food) => food.kitchenStationId?.toString())),
       ];
 
       if (
         kitchenStationIds.some(
-          (stationId) => !stationId || stationId === "undefined"
+          (stationId) => !stationId || stationId === "undefined",
         )
       ) {
         const error = new Error(
-          "One or more food items do not have an assigned kitchen station."
+          "One or more food items do not have an assigned kitchen station.",
         );
         error.statusCode = 400;
         throw error;
@@ -1149,22 +1132,19 @@ export const createTakeawayDeliveryOrder = async (req, res) => {
 
       if (kitchenStations.length !== kitchenStationIds.length) {
         const error = new Error(
-          "One or more assigned kitchen stations are invalid or inactive."
+          "One or more assigned kitchen stations are invalid or inactive.",
         );
         error.statusCode = 400;
         throw error;
       }
 
       const kitchenStationMap = new Map(
-        kitchenStations.map((station) => [
-          station._id.toString(),
-          station,
-        ])
+        kitchenStations.map((station) => [station._id.toString(), station]),
       );
 
       // C. Calculate item prices and GST from database values
       const foodMenuMap = new Map(
-        foodMenus.map((food) => [food._id.toString(), food])
+        foodMenus.map((food) => [food._id.toString(), food]),
       );
 
       let subTotal = 0;
@@ -1202,7 +1182,7 @@ export const createTakeawayDeliveryOrder = async (req, res) => {
 
       // Delivery charges are added after item GST
       const totalAmount = roundMoney(
-        subTotal + totalGst + (orderType === "Delivery" ? charges : 0)
+        subTotal + totalGst + (orderType === "Delivery" ? charges : 0),
       );
 
       // D. Create the order
@@ -1213,8 +1193,7 @@ export const createTakeawayDeliveryOrder = async (req, res) => {
         tableId: null,
         customerName: customerName.trim(),
         customerMobile: customerMobile.trim(),
-        deliveryAddress:
-          orderType === "Delivery" ? deliveryAddress.trim() : "",
+        deliveryAddress: orderType === "Delivery" ? deliveryAddress.trim() : "",
         deliveryChannel: deliveryChannel?.trim() || "Direct",
         deliveryCharges: orderType === "Delivery" ? charges : 0,
         numberOfGuests: null,
@@ -1304,8 +1283,6 @@ export const createTakeawayDeliveryOrder = async (req, res) => {
   }
 };
 
-
-
 // =====================================================
 // UPDATE TAKEAWAY / DELIVERY FULFILMENT STATUS
 // =====================================================
@@ -1334,11 +1311,7 @@ export const updateFulfilmentStatus = async (req, res) => {
     }
 
     // 3. Validate requested status
-    const allowedStatuses = [
-      "Handed Over",
-      "Dispatched",
-      "Delivered",
-    ];
+    const allowedStatuses = ["Handed Over", "Dispatched", "Delivered"];
 
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
@@ -1403,7 +1376,9 @@ export const updateFulfilmentStatus = async (req, res) => {
       const kots = await KOT.find({
         restaurantId,
         orderId: order._id,
-      }).select("kotStatus").lean();
+      })
+        .select("kotStatus")
+        .lean();
 
       if (!kots.length) {
         return res.status(400).json({
@@ -1412,14 +1387,13 @@ export const updateFulfilmentStatus = async (req, res) => {
         });
       }
 
-      const allKotsReady = kots.every(
-        (kot) => kot.kotStatus === "Ready"
-      );
+      const allKotsReady = kots.every((kot) => kot.kotStatus === "Ready");
 
       if (!allKotsReady) {
         return res.status(400).json({
           success: false,
-          message: "All kitchen tickets must be Ready before handover or dispatch.",
+          message:
+            "All kitchen tickets must be Ready before handover or dispatch.",
         });
       }
     }
@@ -1450,7 +1424,6 @@ export const updateFulfilmentStatus = async (req, res) => {
     });
   }
 };
-
 
 // Cancel Takeaway / Delivery Order
 export const cancelOrder = async (req, res) => {
@@ -1493,9 +1466,7 @@ export const cancelOrder = async (req, res) => {
 
       // This controller currently handles Takeaway and Delivery.
       if (!["Takeaway", "Delivery"].includes(order.orderType)) {
-        throw new Error(
-          "This API supports Takeaway and Delivery orders only."
-        );
+        throw new Error("This API supports Takeaway and Delivery orders only.");
       }
 
       if (order.orderStatus !== "Active") {
@@ -1507,9 +1478,7 @@ export const cancelOrder = async (req, res) => {
         roleCode === "CAPTAIN" &&
         order.createdBy?.toString() !== userId.toString()
       ) {
-        throw new Error(
-          "You can cancel only orders created by you."
-        );
+        throw new Error("You can cancel only orders created by you.");
       }
 
       // Prevent cancellation after handover or dispatch.
@@ -1519,14 +1488,14 @@ export const cancelOrder = async (req, res) => {
         order.fulfilmentStatus === "Delivered"
       ) {
         throw new Error(
-          "This order has already been handed over or dispatched. Normal cancellation is not allowed."
+          "This order has already been handed over or dispatched. Normal cancellation is not allowed.",
         );
       }
 
       // Paid orders must go through the refund process.
       if (order.paymentStatus === "Paid") {
         throw new Error(
-          "This order is already paid. Use the refund process instead."
+          "This order is already paid. Use the refund process instead.",
         );
       }
 
@@ -1535,7 +1504,7 @@ export const cancelOrder = async (req, res) => {
         order.paymentStatus !== "Payment Pending"
       ) {
         throw new Error(
-          "This order cannot be cancelled in its current payment status."
+          "This order cannot be cancelled in its current payment status.",
         );
       }
 
@@ -1548,7 +1517,7 @@ export const cancelOrder = async (req, res) => {
       if (bill) {
         if (bill.billStatus === "Paid") {
           throw new Error(
-            "This order has a paid bill. Use the refund process instead."
+            "This order has a paid bill. Use the refund process instead.",
           );
         }
 
@@ -1600,5 +1569,443 @@ export const cancelOrder = async (req, res) => {
     });
   } finally {
     await session.endSession();
+  }
+};
+
+// Get Ready Takeaway and Delivery Orders for Cashier
+export const getCashierReadyOrders = async (req, res) => {
+  try {
+    const roleCode = req.user.roleCode;
+    const restaurantId = req.user.restaurantId;
+
+    if (!["ADMIN", "CASHIER"].includes(roleCode)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Admin and Cashier can access ready orders.",
+      });
+    }
+
+    const orders = await Order.find({
+      restaurantId,
+      orderType: {
+        $in: ["Takeaway", "Delivery"],
+      },
+      orderStatus: "Active",
+      fulfilmentStatus: "Ready",
+    })
+      .populate("createdBy", "username")
+      .sort({ createdAt: 1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Ready Takeaway and Delivery orders fetched successfully.",
+      count: orders.length,
+      data: orders,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch ready orders.",
+    });
+  }
+};
+
+// captain  dashboard
+export const getCaptainDashboard = async (req, res) => {
+  try {
+    const { restaurantId, userId } = req.user;
+    const roleCode = req.user.roleCode;
+
+    if (!["CAPTAIN", "ADMIN"].includes(roleCode)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Captain or Admin can access this dashboard.",
+      });
+    }
+
+    // Use India local dates. If no dates are supplied, use today.
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const fromDate = req.query.fromDate || today;
+    const toDate = req.query.toDate || fromDate;
+
+    const isValidDate = (date) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+
+      const [year, month, day] = date.split("-").map(Number);
+      const parsed = new Date(Date.UTC(year, month - 1, day));
+
+      return (
+        parsed.getUTCFullYear() === year &&
+        parsed.getUTCMonth() === month - 1 &&
+        parsed.getUTCDate() === day
+      );
+    };
+
+    if (!isValidDate(fromDate) || !isValidDate(toDate) || fromDate > toDate) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please provide valid fromDate and toDate in YYYY-MM-DD format.",
+      });
+    }
+
+    const startDate = new Date(`${fromDate}T00:00:00.000+05:30`);
+    const endDate = new Date(`${toDate}T00:00:00.000+05:30`);
+    endDate.setUTCDate(endDate.getUTCDate() + 1);
+
+    const todayStart = new Date(`${today}T00:00:00.000+05:30`);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+    const restaurantObjectId = new mongoose.Types.ObjectId(restaurantId);
+    const captainObjectId = new mongoose.Types.ObjectId(userId);
+
+    const dateFilter = {
+      $gte: startDate,
+      $lt: endDate,
+    };
+
+    // Current open Dine-In orders
+    const openOrders = await Order.find({
+      restaurantId,
+      orderType: "Dine-In",
+      orderStatus: "Active",
+      seatingStatus: "Seated",
+      captainId: { $ne: null },
+    })
+      .populate("tableId", "tableName seatingCapacity occupancyStatus")
+      .select("captainId tableId customerName numberOfGuests createdAt")
+      .lean();
+
+    // Current Ready KOTs belonging to Dine-In captains
+    const readyKots = await KOT.find({
+      restaurantId,
+      captainId: { $ne: null },
+      kotStatus: "Ready",
+    })
+      .select("captainId kotNumber orderId tableId customerName items")
+      .lean();
+
+    // Completed Dine-In orders within the selected date range.
+    // Date filtering currently uses the order's createdAt date.
+    const completedOrders = await Order.find({
+      restaurantId,
+      orderType: "Dine-In",
+      orderStatus: "Completed",
+      captainId: { $ne: null },
+      createdAt: dateFilter,
+    })
+      .select("captainId orderType totalAmount createdAt")
+      .lean();
+
+    // Paid bill sales, grouped by captain
+    const allTimeSales = await Bill.aggregate([
+      {
+        $match: {
+          restaurantId: restaurantObjectId,
+          billStatus: "Paid",
+          captainId: { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: "$captainId",
+          totalSales: { $sum: "$paidAmount" },
+        },
+      },
+    ]);
+
+    const rangeSales = await Bill.aggregate([
+      {
+        $match: {
+          restaurantId: restaurantObjectId,
+          billStatus: "Paid",
+          captainId: { $ne: null },
+          paidAt: dateFilter,
+        },
+      },
+      {
+        $group: {
+          _id: "$captainId",
+          totalSales: { $sum: "$paidAmount" },
+        },
+      },
+    ]);
+
+    const todaySales = await Bill.aggregate([
+      {
+        $match: {
+          restaurantId: restaurantObjectId,
+          billStatus: "Paid",
+          captainId: { $ne: null },
+          paidAt: {
+            $gte: todayStart,
+            $lt: tomorrowStart,
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$captainId",
+          totalSales: { $sum: "$paidAmount" },
+        },
+      },
+    ]);
+
+    // Date-wise paid sales
+    const salesByDate = await Bill.aggregate([
+      {
+        $match: {
+          restaurantId: restaurantObjectId,
+          billStatus: "Paid",
+          captainId: { $ne: null },
+          paidAt: dateFilter,
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$paidAt",
+                timezone: "Asia/Kolkata",
+              },
+            },
+            captainId: "$captainId",
+          },
+          totalSales: { $sum: "$paidAmount" },
+        },
+      },
+      { $sort: { "_id.date": 1 } },
+    ]);
+
+    // Date-wise completed orders
+    const completedOrdersByDate = await Order.aggregate([
+      {
+        $match: {
+          restaurantId: restaurantObjectId,
+          orderType: "Dine-In",
+          orderStatus: "Completed",
+          captainId: { $ne: null },
+          createdAt: dateFilter,
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$createdAt",
+                timezone: "Asia/Kolkata",
+              },
+            },
+            captainId: "$captainId",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.date": 1 } },
+    ]);
+
+    const getCaptainTotal = (records, captainId) => {
+      const record = records.find(
+        (item) => item._id.toString() === captainId.toString(),
+      );
+
+      return record?.totalSales || 0;
+    };
+
+    const getCaptainOpenOrders = (captainId) =>
+      openOrders.filter(
+        (order) => order.captainId.toString() === captainId.toString(),
+      );
+
+    const getCaptainReadyKots = (captainId) =>
+      readyKots.filter(
+        (kot) => kot.captainId.toString() === captainId.toString(),
+      );
+
+    const getCaptainCompletedOrders = (captainId) =>
+      completedOrders.filter(
+        (order) => order.captainId.toString() === captainId.toString(),
+      );
+
+    const getUniqueTables = (orders) => {
+      const tables = new Map();
+
+      orders.forEach((order) => {
+        if (order.tableId?._id) {
+          tables.set(order.tableId._id.toString(), order.tableId);
+        }
+      });
+
+      return Array.from(tables.values());
+    };
+
+    const getReadyItemDetails = (kots) => {
+      const result = [];
+
+      kots.forEach((kot) => {
+        const readyItems = (kot.items || []).filter(
+          (item) => item.itemStatus === "Ready",
+        );
+
+        readyItems.forEach((item) => {
+          result.push({
+            kotId: kot._id,
+            kotNumber: kot.kotNumber,
+            orderId: kot.orderId,
+            tableId: kot.tableId,
+            customerName: kot.customerName,
+            itemName: item.itemName,
+            quantity: item.quantity,
+            itemStatus: item.itemStatus,
+          });
+        });
+      });
+
+      return result;
+    };
+
+    const getReadyQuantity = (items) =>
+      items.reduce((total, item) => total + item.quantity, 0);
+
+    const allCaptainIds = new Set([
+      ...openOrders.map((order) => order.captainId.toString()),
+      ...readyKots.map((kot) => kot.captainId.toString()),
+      ...completedOrders.map((order) => order.captainId.toString()),
+      ...allTimeSales.map((sale) => sale._id.toString()),
+      ...rangeSales.map((sale) => sale._id.toString()),
+    ]);
+
+    const captainBreakdown = Array.from(allCaptainIds).map((captainId) => {
+      const captainOpenOrders = getCaptainOpenOrders(captainId);
+      const captainReadyItems = getReadyItemDetails(
+        getCaptainReadyKots(captainId),
+      );
+      const captainCompletedOrders = getCaptainCompletedOrders(captainId);
+
+      return {
+        captainId,
+        openTables: getUniqueTables(captainOpenOrders).length,
+        readyItemLines: captainReadyItems.length,
+        readyItemQuantity: getReadyQuantity(captainReadyItems),
+        completedOrders: captainCompletedOrders.length,
+        salesInSelectedRange: getCaptainTotal(rangeSales, captainId),
+        overallSales: getCaptainTotal(allTimeSales, captainId),
+        salesToday: getCaptainTotal(todaySales, captainId),
+      };
+    });
+
+    const overallOpenTables = getUniqueTables(openOrders);
+    const overallReadyItems = getReadyItemDetails(readyKots);
+
+    const myOpenOrders =
+      roleCode === "CAPTAIN" ? getCaptainOpenOrders(userId) : [];
+    const myReadyItems =
+      roleCode === "CAPTAIN"
+        ? getReadyItemDetails(getCaptainReadyKots(userId))
+        : [];
+    const myCompletedOrders =
+      roleCode === "CAPTAIN" ? getCaptainCompletedOrders(userId) : [];
+
+    const myDashboard =
+      roleCode === "CAPTAIN"
+        ? {
+            openTables: getUniqueTables(myOpenOrders).length,
+            openTableDetails: getUniqueTables(myOpenOrders),
+            readyItemLines: myReadyItems.length,
+            readyItemQuantity: getReadyQuantity(myReadyItems),
+            readyItems: myReadyItems,
+            completedOrders: myCompletedOrders.length,
+            salesToday: getCaptainTotal(todaySales, userId),
+            salesInSelectedRange: getCaptainTotal(rangeSales, userId),
+            overallSales: getCaptainTotal(allTimeSales, userId),
+          }
+        : null;
+
+    const overallDashboard = {
+      openTables: overallOpenTables.length,
+      readyItemLines: overallReadyItems.length,
+      readyItemQuantity: getReadyQuantity(overallReadyItems),
+      completedOrders: completedOrders.length,
+      salesToday: todaySales.reduce(
+        (total, item) => total + item.totalSales,
+        0,
+      ),
+      salesInSelectedRange: rangeSales.reduce(
+        (total, item) => total + item.totalSales,
+        0,
+      ),
+      overallSales: allTimeSales.reduce(
+        (total, item) => total + item.totalSales,
+        0,
+      ),
+    };
+
+    const mySalesByDate = salesByDate
+      .filter((item) => item._id.captainId.toString() === userId)
+      .map((item) => ({
+        date: item._id.date,
+        totalSales: item.totalSales,
+      }));
+
+    const myCompletedOrdersByDate = completedOrdersByDate
+      .filter((item) => item._id.captainId.toString() === userId)
+      .map((item) => ({
+        date: item._id.date,
+        count: item.count,
+      }));
+
+    const overallSalesByDate = {};
+    salesByDate.forEach((item) => {
+      overallSalesByDate[item._id.date] =
+        (overallSalesByDate[item._id.date] || 0) + item.totalSales;
+    });
+
+    const overallCompletedOrdersByDate = {};
+    completedOrdersByDate.forEach((item) => {
+      overallCompletedOrdersByDate[item._id.date] =
+        (overallCompletedOrdersByDate[item._id.date] || 0) + item.count;
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Captain dashboard fetched successfully.",
+      dateRange: {
+        fromDate,
+        toDate,
+        timezone: "Asia/Kolkata",
+      },
+      myDashboard,
+      overallDashboard,
+      dateWise: {
+        mySales: mySalesByDate,
+        myCompletedOrders: myCompletedOrdersByDate,
+        overallSales: Object.entries(overallSalesByDate).map(
+          ([date, totalSales]) => ({ date, totalSales }),
+        ),
+        overallCompletedOrders: Object.entries(
+          overallCompletedOrdersByDate,
+        ).map(([date, count]) => ({ date, count })),
+      },
+      captainBreakdown,
+    });
+  } catch (error) {
+    console.error("Get captain dashboard error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch captain dashboard.",
+      error: error.message,
+    });
   }
 };

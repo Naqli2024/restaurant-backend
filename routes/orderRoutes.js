@@ -9,7 +9,9 @@ import {
   checkoutOrder,
   createTakeawayDeliveryOrder,
   updateFulfilmentStatus,
-  cancelOrder
+  cancelOrder,
+  getCashierReadyOrders,
+  getCaptainDashboard
 } from "../controllers/orderController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -24,6 +26,9 @@ router.get("/dine-in/floors", getDineInFloors);
 // Create a Dine-In order
 router.post("/dine-in", createDineInOrder);
 router.post("/takeaway-delivery", createTakeawayDeliveryOrder);
+router.get("/cashier/ready-orders", getCashierReadyOrders);
+
+router.get("/captain/dashboard", getCaptainDashboard);
 
 router.patch("/:orderId/fulfilment-status", updateFulfilmentStatus);
 
