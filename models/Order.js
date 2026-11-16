@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema(
@@ -201,9 +200,7 @@ const orderSchema = new mongoose.Schema(
         "Delivered",
       ],
       default: function () {
-        return this.orderType === "Dine-In"
-          ? "Not Applicable"
-          : "Pending";
+        return this.orderType === "Dine-In" ? "Not Applicable" : "Pending";
       },
     },
 
@@ -217,9 +214,7 @@ const orderSchema = new mongoose.Schema(
       type: String,
       enum: ["Not Applicable", "Seated", "Left"],
       default: function () {
-        return this.orderType === "Dine-In"
-          ? "Seated"
-          : "Not Applicable";
+        return this.orderType === "Dine-In" ? "Seated" : "Not Applicable";
       },
     },
 
@@ -238,6 +233,24 @@ const orderSchema = new mongoose.Schema(
     orderedAt: {
       type: Date,
       default: Date.now,
+    },
+
+    // Cancellation details
+    cancellationReason: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    cancelledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    cancelledAt: {
+      type: Date,
+      default: null,
     },
   },
   {

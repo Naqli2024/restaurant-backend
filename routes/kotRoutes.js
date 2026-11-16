@@ -6,6 +6,7 @@ import {
   startKOT,
   updateKOTItemStatus,
   getKitchenDisplay,
+  getCaptainReadyKOTs,
 } from "../controllers/kotController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -20,6 +21,9 @@ router.get("/", getKOTs);
 
 // Kitchen Display
 router.get("/kitchen-display", getKitchenDisplay);
+
+// Captain: Get assigned Ready KOTs
+router.get("/captain/ready", getCaptainReadyKOTs);
 
 // Get one KOT.
 router.get("/:id", getKOTById);

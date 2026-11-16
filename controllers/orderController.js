@@ -8,6 +8,7 @@ import KitchenStation from "../models/KitchenStation.js";
 import KOT from "../models/KOT.js";
 import User from "../models/User.js";
 import Role from "../models/Role.js";
+import Bill from "../models/Bill.js";
 
 // Helper: round amounts to 2 decimal places
 const roundMoney = (amount) => {
@@ -1447,5 +1448,157 @@ export const updateFulfilmentStatus = async (req, res) => {
       success: false,
       message: "Failed to update fulfilment status.",
     });
+  }
+};
+
+
+// Cancel Takeaway / Delivery Order
+export const cancelOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+
+    const roleCode = req.user.roleCode;
+    const userId = req.user.userId;
+    const restaurantId = req.user.restaurantId;
+
+    // Only ADMIN, CASHIER, and CAPTAIN can cancel orders.
+    if (!["ADMIN", "CASHIER", "CAPTAIN"].includes(roleCode)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to cancel orders.",
+      });
+    }
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Cancellation reason is required.",
+      });
+    }
+
+    let cancelledOrder;
+
+    await session.withTransaction(async () => {
+      const order = await Order.findOne({
+        _id: orderId,
+        restaurantId,
+      }).session(session);
+
+      if (!order) {
+        throw new Error("Order not found.");
+      }
+
+      // This controller currently handles Takeaway and Delivery.
+      if (!["Takeaway", "Delivery"].includes(order.orderType)) {
+        throw new Error(
+          "This API supports Takeaway and Delivery orders only."
+        );
+      }
+
+      if (order.orderStatus !== "Active") {
+        throw new Error("Only active orders can be cancelled.");
+      }
+
+      // A Captain can cancel only an order created by them.
+      if (
+        roleCode === "CAPTAIN" &&
+        order.createdBy?.toString() !== userId.toString()
+      ) {
+        throw new Error(
+          "You can cancel only orders created by you."
+        );
+      }
+
+      // Prevent cancellation after handover or dispatch.
+      if (
+        order.fulfilmentStatus === "Handed Over" ||
+        order.fulfilmentStatus === "Dispatched" ||
+        order.fulfilmentStatus === "Delivered"
+      ) {
+        throw new Error(
+          "This order has already been handed over or dispatched. Normal cancellation is not allowed."
+        );
+      }
+
+      // Paid orders must go through the refund process.
+      if (order.paymentStatus === "Paid") {
+        throw new Error(
+          "This order is already paid. Use the refund process instead."
+        );
+      }
+
+      if (
+        order.paymentStatus !== "Unpaid" &&
+        order.paymentStatus !== "Payment Pending"
+      ) {
+        throw new Error(
+          "This order cannot be cancelled in its current payment status."
+        );
+      }
+
+      // Find an existing bill, if one was generated.
+      const bill = await Bill.findOne({
+        restaurantId,
+        orderId: order._id,
+      }).session(session);
+
+      if (bill) {
+        if (bill.billStatus === "Paid") {
+          throw new Error(
+            "This order has a paid bill. Use the refund process instead."
+          );
+        }
+
+        if (bill.billStatus === "Generated") {
+          bill.billStatus = "Cancelled";
+          await bill.save({ session });
+        }
+      }
+
+      const now = new Date();
+
+      // Cancel all KOTs and their individual items.
+      const kots = await KOT.find({
+        restaurantId,
+        orderId: order._id,
+      }).session(session);
+
+      for (const kot of kots) {
+        kot.kotStatus = "Cancelled";
+        kot.cancelledAt = now;
+
+        for (const item of kot.items) {
+          item.itemStatus = "Cancelled";
+        }
+
+        await kot.save({ session });
+      }
+
+      // Cancel the order.
+      order.orderStatus = "Cancelled";
+      order.cancellationReason = reason.trim();
+      order.cancelledBy = userId;
+      order.cancelledAt = now;
+
+      await order.save({ session });
+
+      cancelledOrder = order;
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `${cancelledOrder.orderType} order cancelled successfully.`,
+      data: cancelledOrder,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to cancel order.",
+    });
+  } finally {
+    await session.endSession();
   }
 };

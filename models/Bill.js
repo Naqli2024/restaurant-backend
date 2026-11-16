@@ -127,6 +127,12 @@ const billSchema = new mongoose.Schema(
       min: 0,
     },
 
+    deliveryCharges: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     totalAmount: {
       type: Number,
       required: true,

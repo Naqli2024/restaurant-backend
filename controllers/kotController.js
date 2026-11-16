@@ -635,3 +635,54 @@ export const getKitchenDisplay = async (req, res) => {
     return handleError(res, error, "Get Kitchen Display");
   }
 };
+
+// Get Ready KOTs assigned to the logged-in Captain
+export const getCaptainReadyKOTs = async (req, res) => {
+  try {
+    const access = await getKOTAccess(req);
+
+    // Only Captain can access this endpoint.
+    if (!access.isCaptain) {
+      throw createError(
+        "Only Captains can access their ready KOTs.",
+        403
+      );
+    }
+
+    const kots = await KOT.find({
+      restaurantId: access.restaurantId,
+      captainId: access.captainId,
+      kotStatus: "Ready",
+      items: {
+        $elemMatch: {
+          itemStatus: "Ready",
+        },
+      },
+    }).sort({ createdAt: 1 });
+
+    // Return only the items that are ready to be served.
+    const data = kots.map((kot) => {
+      const kotObject = kot.toObject();
+
+      return {
+        ...kotObject,
+        readyItems: kot.items.filter(
+          (item) => item.itemStatus === "Ready"
+        ),
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Captain ready KOTs fetched successfully.",
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    return handleError(
+      res,
+      error,
+      "Get Captain Ready KOTs"
+    );
+  }
+};

@@ -42,15 +42,28 @@ export const generateBill = async (req, res) => {
         throw new Error("Order not found.");
       }
 
-      // Bill can only be generated after Captain requests it
-      if (order.paymentStatus !== "Bill Requested") {
-        throw new Error(
-          "Bill can only be generated for orders with Bill Requested status."
-        );
-      }
-
+      // Order must be active
       if (order.orderStatus !== "Active") {
         throw new Error("Cannot generate a bill for an inactive order.");
+      }
+
+      // Validate payment status according to order type
+      if (order.orderType === "Dine-In") {
+        if (order.paymentStatus !== "Bill Requested") {
+          throw new Error(
+            "Dine-In bill can only be generated after the Captain requests it."
+          );
+        }
+      } else if (
+        ["Takeaway", "Delivery"].includes(order.orderType)
+      ) {
+        if (order.paymentStatus !== "Unpaid") {
+          throw new Error(
+            "Takeaway and Delivery bills can only be generated for unpaid orders."
+          );
+        }
+      } else {
+        throw new Error("Invalid order type.");
       }
 
       // Check whether a bill already exists
@@ -78,7 +91,8 @@ export const generateBill = async (req, res) => {
         floorId: order.floorId || null,
         tableId: order.tableId || null,
         customerName: order.customerName,
-        captainId: order.captainId,
+        captainId: order.captainId || null,
+
         items: order.items.map((item) => ({
           foodMenuId: item.foodMenuId || null,
           itemName: item.itemName,
@@ -90,8 +104,16 @@ export const generateBill = async (req, res) => {
           totalPrice: item.totalPrice,
           specialInstructions: item.specialInstructions || "",
         })),
+
         subTotal: order.subTotal,
         totalGst: order.totalGst,
+
+        // Delivery charges are stored separately
+        deliveryCharges:
+          order.orderType === "Delivery"
+            ? order.deliveryCharges || 0
+            : 0,
+
         totalAmount: order.totalAmount,
         billStatus: "Generated",
         generatedBy,
@@ -116,12 +138,16 @@ export const generateBill = async (req, res) => {
 
     const clientErrors = [
       "Order not found.",
-      "Bill can only be generated for orders with Bill Requested status.",
       "Cannot generate a bill for an inactive order.",
+      "Dine-In bill can only be generated after the Captain requests it.",
+      "Takeaway and Delivery bills can only be generated for unpaid orders.",
       "A bill has already been generated for this order.",
+      "Invalid order type.",
     ];
 
-    return res.status(clientErrors.includes(error.message) ? 400 : 500).json({
+    return res.status(
+      clientErrors.includes(error.message) ? 400 : 500
+    ).json({
       success: false,
       message: error.message || "Failed to generate bill.",
     });

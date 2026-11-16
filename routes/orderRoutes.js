@@ -9,6 +9,7 @@ import {
   checkoutOrder,
   createTakeawayDeliveryOrder,
   updateFulfilmentStatus,
+  cancelOrder
 } from "../controllers/orderController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -30,6 +31,7 @@ router.get("/bill-requests", getBillRequests);
 // Captain requests bill for a specific order
 router.patch("/:orderId/request-bill", requestBill);
 router.patch("/:orderId/checkout", checkoutOrder);
+router.patch("/:orderId/cancel", cancelOrder);
 
 
 // Get complete order details by Order ID
