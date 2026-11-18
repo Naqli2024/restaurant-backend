@@ -2009,3 +2009,99 @@ export const getCaptainDashboard = async (req, res) => {
     });
   }
 };
+
+
+// orders By captainId
+export const getOrdersByCaptainId = async (req, res) => {
+  try {
+    const { restaurantId, userId, roleCode } = req.user;
+    const { captainId } = req.params;
+
+    // Only ADMIN and CAPTAIN can access
+    if (!["ADMIN", "CAPTAIN"].includes(roleCode)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Admin or Captain can view captain orders.",
+      });
+    }
+
+    // Validate captainId
+    if (!mongoose.Types.ObjectId.isValid(captainId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid captainId.",
+      });
+    }
+
+    // Captain can view only their own orders
+    if (
+      roleCode === "CAPTAIN" &&
+      captainId !== userId.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only view your own orders.",
+      });
+    }
+
+    // Verify that the selected user is an active Captain
+    const captainRole = await Role.findOne({
+      restaurantId,
+      code: "CAPTAIN",
+      isActive: true,
+    }).select("_id");
+
+    if (!captainRole) {
+      return res.status(404).json({
+        success: false,
+        message: "Captain role not found.",
+      });
+    }
+
+    const captain = await User.findOne({
+      _id: captainId,
+      restaurantId,
+      roleId: captainRole._id,
+      isActive: true,
+    }).select("_id username");
+
+    if (!captain) {
+      return res.status(404).json({
+        success: false,
+        message: "Active captain not found in this restaurant.",
+      });
+    }
+
+    // Fetch orders assigned to this Captain
+    const orders = await Order.find({
+      restaurantId,
+      captainId: captain._id,
+    })
+      .populate("floorId")
+      .populate("tableId")
+      .populate("captainId", "username")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      message: "Captain orders fetched successfully.",
+
+      captain: {
+        captainId: captain._id,
+        captainName: captain.username,
+      },
+
+      count: orders.length,
+      data: orders,
+    });
+  } catch (error) {
+    console.error("Get orders by captain error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch captain orders.",
+      error: error.message,
+    });
+  }
+};
