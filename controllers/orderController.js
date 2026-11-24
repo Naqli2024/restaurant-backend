@@ -174,16 +174,16 @@ export const createDineInOrder = async (req, res) => {
       });
     }
 
-    if (
-      !customerName ||
-      typeof customerName !== "string" ||
-      !customerName.trim()
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Customer name is required.",
-      });
-    }
+    // if (
+    //   !customerName ||
+    //   typeof customerName !== "string" ||
+    //   !customerName.trim()
+    // ) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Customer name is required.",
+    //   });
+    // }
 
     if (
       !Number.isInteger(Number(numberOfGuests)) ||
