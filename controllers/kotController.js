@@ -637,6 +637,7 @@ export const getKitchenDisplay = async (req, res) => {
 };
 
 // Get Ready KOTs assigned to the logged-in Captain
+
 export const getCaptainReadyKOTs = async (req, res) => {
   try {
     const access = await getKOTAccess(req);
@@ -644,7 +645,7 @@ export const getCaptainReadyKOTs = async (req, res) => {
     // Only Captain can access this endpoint.
     if (!access.isCaptain) {
       throw createError(
-        "Only Captains can access their ready KOTs.",
+        "Only Captains can access their KOTs.",
         403
       );
     }
@@ -652,37 +653,53 @@ export const getCaptainReadyKOTs = async (req, res) => {
     const kots = await KOT.find({
       restaurantId: access.restaurantId,
       captainId: access.captainId,
-      kotStatus: "Ready",
+
+      // Fetch both Ready and Served KOTs.
+      kotStatus: {
+        $in: ["Ready", "Served"],
+      },
+
+      // Include KOTs having at least one Ready or Served item.
       items: {
         $elemMatch: {
-          itemStatus: "Ready",
+          itemStatus: {
+            $in: ["Ready", "Served"],
+          },
         },
       },
     }).sort({ createdAt: 1 });
 
-    // Return only the items that are ready to be served.
+    // Return ready and served items separately.
     const data = kots.map((kot) => {
       const kotObject = kot.toObject();
 
+      const readyItems = kot.items.filter(
+        (item) => item.itemStatus === "Ready"
+      );
+
+      const servedItems = kot.items.filter(
+        (item) => item.itemStatus === "Served"
+      );
+
       return {
         ...kotObject,
-        readyItems: kot.items.filter(
-          (item) => item.itemStatus === "Ready"
-        ),
+        readyItems,
+        servedItems,
       };
     });
 
     return res.status(200).json({
       success: true,
-      message: "Captain ready KOTs fetched successfully.",
+      message: "Captain Ready and Served KOTs fetched successfully.",
       count: data.length,
       data,
     });
+
   } catch (error) {
     return handleError(
       res,
       error,
-      "Get Captain Ready KOTs"
+      "Get Captain Ready and Served KOTs"
     );
   }
 };
