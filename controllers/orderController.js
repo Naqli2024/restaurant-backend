@@ -1356,7 +1356,7 @@ export const updateFulfilmentStatus = async (req, res) => {
         status === "Handed Over") ||
       (order.orderType === "Delivery" &&
         order.fulfilmentStatus === "Ready" &&
-        status === "Dispatched") ||
+        status === "Delivered") ||
       (order.orderType === "Delivery" &&
         order.fulfilmentStatus === "Dispatched" &&
         status === "Delivered");
@@ -1398,8 +1398,18 @@ export const updateFulfilmentStatus = async (req, res) => {
       }
     }
 
-    // 9. Update fulfilment status
+    // 9. Update fulfilment status and order status
     order.fulfilmentStatus = status;
+
+    // Complete Takeaway after Handed Over
+    if (order.orderType === "Takeaway" && status === "Handed Over") {
+      order.orderStatus = "Completed";
+    }
+
+    // Complete Delivery after Delivered
+    if (order.orderType === "Delivery" && status === "Delivered") {
+      order.orderStatus = "Completed";
+    }
 
     await order.save();
 
@@ -2010,7 +2020,6 @@ export const getCaptainDashboard = async (req, res) => {
   }
 };
 
-
 // orders By captainId
 export const getOrdersByCaptainId = async (req, res) => {
   try {
@@ -2034,10 +2043,7 @@ export const getOrdersByCaptainId = async (req, res) => {
     }
 
     // Captain can view only their own orders
-    if (
-      roleCode === "CAPTAIN" &&
-      captainId !== userId.toString()
-    ) {
+    if (roleCode === "CAPTAIN" && captainId !== userId.toString()) {
       return res.status(403).json({
         success: false,
         message: "You can only view your own orders.",
