@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import registerRestaurant from "../services/restaurantService.js";
+import Restaurant from "../models/Restaurant.js";
 
 const createRestaurant = async (req, res) => {
   try {
@@ -93,6 +94,46 @@ const createRestaurant = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Unable to register restaurant.",
+    });
+  }
+};
+
+export const getRestaurantById = async (req, res) => {
+  try {
+    const { restaurantId } = req.params;
+
+    // 1. Validate restaurant ID.
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid restaurant ID.",
+      });
+    }
+
+    // 2. Find restaurant by ID.
+    const restaurant = await Restaurant.findById(restaurantId)
+      .select("-__v");
+
+    // 3. Check whether restaurant exists.
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant not found.",
+      });
+    }
+
+    // 4. Return restaurant details.
+    return res.status(200).json({
+      success: true,
+      message: "Restaurant details fetched successfully.",
+      data: restaurant,
+    });
+  } catch (error) {
+    console.error("Get restaurant by ID error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch restaurant details.",
     });
   }
 };
